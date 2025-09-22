@@ -106,15 +106,36 @@ function isValidUrl(u) {
   catch { return false; }
 }
 
-function pageFor(dest) {
-  const safe = String(dest).replace(/"/g, "&quot;");
+async function fetchMeta(url) {
+  try {
+    const res = await fetch(url, { redirect: "follow", signal: AbortSignal.timeout(8000) });
+    const html = await res.text();
+    const pick = (re) => (html.match(re)?.[1] || "").trim();
+    return {
+      title: pick(/<title>([^<]{1,120})<\/title>/i),
+      desc: pick(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']{1,200})["']/i),
+      image: pick(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i)
+    };
+  } catch { return {}; }
+}
+
+function pageFor(dest, slug, shortBase, meta = {}) {
+  const safe = dest.replace(/"/g, "&quot;");
+  const qr = `${shortBase}${slug}.png`;
   return `<!doctype html>
-<meta charset="utf-8" />
-<title>Redirecting…</title>
-<meta http-equiv="refresh" content="0; url=${safe}">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>${meta.title || "Redirecting…"}</title>
+<meta property="og:url" content="${shortBase}${slug}">
+<meta property="og:title" content="${(meta.title || "Redirecting…").slice(0,120)}">
+<meta property="og:description" content="${(meta.desc || "Short link").slice(0,200)}">
+${meta.image ? `<meta property="og:image" content="${meta.image}">` : ""}
 <link rel="canonical" href="${safe}">
-<script>location.replace(${JSON.stringify(dest)});</script>
-<p>If you are not redirected, <a href="${safe}">click here</a>.</p>`;
+<link rel="alternate" type="image/png" href="${qr}">
+<meta http-equiv="refresh" content="0; url=${safe}">
+<script>location.replace(${JSON.stringify(dest)} + location.search + location.hash);</script>
+<p><a href="${safe}">Continue</a> • <a href="${qr}" download>QR</a></p>`;
 }
 
 const links = await fetchAllShortlinks();
