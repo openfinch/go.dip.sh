@@ -28,58 +28,66 @@ async function fetchAllShortlinks() {
 }
 
 function parseFromIssue(issue) {
-  const body = (issue.body || "").trim();
+  const body = (issue.body ?? "").trim();
 
-  // 1) Try to parse "### Slug" / "### Destination URL" sections (case-insensitive)
-  //    We grab the text after each heading up to the next heading or end.
-  const section = (name) => {
+  // Extract text following a Markdown heading up to the next heading or EOF.
+  const takeSection = (name) => {
     const re = new RegExp(
-      String.raw`(^|\n)#{1,6}\s*${name}\s*\n+([\s\S]*?)(?=\n#{1,6}\s|\n*$)`,
+      String.raw`(?:^|\n)#{1,6}\s*${name}\s*\n+([\s\S]*?)(?=(?:\n#{1,6}\s)|\n*$)`,
       "i"
     );
     const m = body.match(re);
     if (!m) return undefined;
-    // Clean block text: strip code fences, trim whitespace
-    let text = m[2].trim();
-    // If users put value in a code block, strip fences
-    text = text.replace(/^```[^\n]*\n([\s\S]*?)\n```$/m, "$1").trim();
-    // Collapse internal whitespace lines
-    return text.split("\n").map(s => s.trim()).filter(Boolean).join(" ");
+
+    let text = m[1].trim();
+
+    // If wrapped in a code fence, strip it
+    const fence = text.match(/^```[^\n]*\n([\s\S]*?)\n```$/m);
+    if (fence) text = fence[1].trim();
+
+    // Collapse lines like:
+    // docs\n\n\n  -> "docs"
+    text = text
+      .split("\n")
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .join(" ");
+
+    return text;
   };
 
-  let slug = section("slug");
-  let url  = section("destination url");
+  let slugField = takeSection("slug");
+  let url = takeSection("destination url");
 
-  // 2) Fallbacks:
-  //    - Support inline "Slug:" / "Destination URL:" styles
-  if (!slug) {
+  // Fallback: inline "Slug:" and "Destination URL:" styles
+  if (!slugField) {
     const sm = body.match(/^\s*slug\s*:\s*([a-z0-9- ,]+)\s*$/mi);
-    if (sm) slug = sm[1].trim();
+    if (sm) slugField = sm[1].trim();
   }
   if (!url) {
     const um = body.match(/^\s*destination url\s*:\s*(\S+)\s*$/mi);
     if (um) url = um[1].trim();
   }
 
-  // 3) Final fallback to title/body scheme
-  if (!slug) {
-    slug = issue.title.trim().toLowerCase()
-      .replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
-  }
-  if (!url) url = body;
+  // Final fallback for slug: sanitize the title
+  let fallbackTitleSlug = issue.title
+    ? issue.title.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "")
+    : "";
 
-  // Allow comma/space separated aliases in slug field: "docs, handbook"
-  const slugs = String(slug)
+  // Allow multiple slugs separated by spaces/commas/newlines
+  const slugs = (slugField ?? fallbackTitleSlug)
     .split(/[,\s]+/)
-    .map(s => s.trim())
+    .map((s) => s.trim())
     .filter(Boolean);
 
   return { slugs, url };
 }
 
-
-function isValidSlug(s) { return /^[a-z0-9-]+$/.test(s); }
-function isValidUrl(u) { try { const x = new URL(u); return /^https?:$/.test(x.protocol); } catch { return false; } }
+function isValidSlug(s) { return typeof s === "string" && /^[a-z0-9-]+$/.test(s); }
+function isValidUrl(u) {
+  try { const x = new URL(u); return /^https?:$/.test(x.protocol); }
+  catch { return false; }
+}
 
 function pageFor(dest) {
   const safe = String(dest).replace(/"/g, "&quot;");
@@ -97,15 +105,41 @@ const seen = new Set();
 const rows = [];
 
 for (const issue of links) {
-  const { slug, url } = parseFromIssue(issue);
-  if (!isValidSlug(slug) || !isValidUrl(url) || seen.has(slug)) continue;
-  seen.add(slug);
+  try {
+    const { slugs, url } = parseFromIssue(issue);
 
-  const dir = path.join(outDir, slug);
-  fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, "index.html"), pageFor(url));
+    if (!url || !isValidUrl(url)) {
+      console.warn(`Skipping #${issue.number}: invalid URL ->`, url);
+      continue;
+    }
+    if (!slugs.length) {
+      console.warn(`Skipping #${issue.number}: no slug(s) parsed`);
+      continue;
+    }
 
-  rows.push([slug, url, issue.html_url]);
+    for (const s of slugs) {
+      if (!isValidSlug(s)) {
+        console.warn(`Skipping slug "${s}" in #${issue.number}: invalid format`);
+        continue;
+      }
+      if (seen.has(s)) {
+        console.warn(`Duplicate slug "${s}" (first wins). Source issue: #${issue.number}`);
+        continue;
+      }
+      seen.add(s);
+
+      const dir = path.join(outDir, s);               // <- now guaranteed string
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, "index.html"), pageFor(url));
+      rows.push([s, url, issue.html_url]);
+    }
+  } catch (e) {
+    console.warn(`Error processing #${issue.number}:`, e);
+  }
+}
+
+if (!rows.length) {
+  throw new Error("No valid shortlinks were generated. Check issue formats.");
 }
 
 // optional: index page
