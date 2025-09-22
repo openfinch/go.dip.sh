@@ -1,0 +1,187 @@
+name: Shortlink health check
+
+on:
+  schedule:
+    - cron: "23 2 * * *"   # daily at 02:23 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    env:
+      HEALTH_TIMEOUT_MS: "10000"      # 10s per URL
+      HEALTH_RETRIES: "1"             # retry once without Range
+      HEALTH_CONCURRENCY: "10"        # parallel checks
+      SHORT_BASE_URL: "https://go.dip.sh/"  # for comment links
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - run: npm i octokit
+      - name: Run health check
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: node -e "$(cat <<'JS'
+/* scripts/healthcheck.inline.mjs */
+import { Octokit } from "octokit";
+
+// --- config / env
+const token = process.env.GITHUB_TOKEN;
+const repoFull = process.env.GITHUB_REPOSITORY;
+const [owner, repo] = repoFull.split("/");
+const octokit = new Octokit({ auth: token });
+const UA = "go.dip.sh-healthcheck/1.0 (+https://go.dip.sh/)";
+const TIMEOUT = Number(process.env.HEALTH_TIMEOUT_MS || 10000);
+const RETRIES = Number(process.env.HEALTH_RETRIES || 1);
+const CONC = Math.max(1, Number(process.env.HEALTH_CONCURRENCY || 10));
+const shortBase = (process.env.SHORT_BASE_URL || `https://${owner}.github.io/${repo}/`).replace(/\/?$/, "/");
+
+// --- utils
+const sleep = (ms)=>new Promise(r=>setTimeout(r,ms));
+function limiter(n){
+  let active=0, q=[]; 
+  return fn => new Promise((res,rej)=>{
+    const run=()=>{ active++; fn().then(res,rej).finally(()=>{ active--; if(q.length) q.shift()();}); };
+    active < n ? run() : q.push(run);
+  });
+}
+function isValidSlug(s){ return typeof s==="string" && /^[a-z0-9-]+$/.test(s); }
+function isValidUrl(u){ try{ const x=new URL(u); return /^https?:$/.test(x.protocol);}catch{ return false; } }
+
+// Parse your Issue Form format:
+// ### Slug\n\n<value>\n\n### Destination URL\n\n<value>
+function parseFromIssue(issue){
+  const body=(issue.body||"").trim();
+  const sect=(name)=>{
+    const re=new RegExp(String.raw`(?:^|\n)#{1,6}\s*${name}\s*\n+([\s\S]*?)(?=(?:\n#{1,6}\s)|\n*$)`,"i");
+    const m=body.match(re); if(!m) return undefined;
+    let t=m[1].trim();
+    const fenced=t.match(/^```[^\n]*\n([\s\S]*?)\n```$/m);
+    if(fenced) t=fenced[1].trim();
+    return t.split("\n").map(s=>s.trim()).filter(Boolean).join(" ");
+  };
+  let slugField = sect("slug");
+  let url = sect("destination url");
+  if(!slugField){ const sm=body.match(/^\s*slug\s*:\s*([a-z0-9- ,]+)\s*$/mi); if(sm) slugField=sm[1].trim(); }
+  if(!url){ const um=body.match(/^\s*destination url\s*:\s*(\S+)\s*$/mi); if(um) url=um[1].trim(); }
+  const titleSlug = (issue.title||"").toLowerCase().replace(/[^a-z0-9-]/g,"-").replace(/-+/g,"-").replace(/^-|-$/g,"");
+  const slugs = (slugField||titleSlug).split(/[,\s]+/).map(s=>s.trim()).filter(Boolean);
+  return { slugs, url };
+}
+
+// HEAD-like GET with Range; retry once without Range; follow redirects
+async function checkUrl(url){
+  const attempt = async (useRange)=>{
+    const ctrl = AbortSignal.timeout(TIMEOUT);
+    const headers = {
+      "User-Agent": UA,
+      "Accept": "text/html,application/xhtml+xml,*/*;q=0.8"
+    };
+    if(useRange) headers.Range = "bytes=0-0";
+    const t0 = Date.now();
+    const res = await fetch(url, { method:"GET", headers, redirect:"follow", signal: ctrl });
+    const ms = Date.now() - t0;
+    // Drain a tiny body just in case
+    try { await res.arrayBuffer(); } catch {}
+    return { ok: res.status>=200 && res.status<400, status: res.status, finalUrl: res.url, ms };
+  };
+  try {
+    let r = await attempt(true);
+    if(!r.ok && RETRIES>0) r = await attempt(false);
+    return r;
+  } catch (e){
+    return { ok:false, error: (e && e.message) || String(e) };
+  }
+}
+
+// sticky comment helpers
+const MARK = "<!-- shortlink-health -->";
+function renderStatusBadge(ok, status, error){
+  if(ok) return `✅ Healthy (HTTP ${status})`;
+  if(status) return `❌ Unhealthy (HTTP ${status})`;
+  return `⚠️ Unreachable (${error||"network error"})`;
+}
+function renderComment(issue, slugs, result){
+  const when = new Date().toISOString();
+  const lines = [
+    MARK,
+    `**Shortlink health** for ${slugs.map(s=>`\`${s}\``).join(", ")}  `,
+    `• Target: ${result.finalUrl ? `<${result.finalUrl}>` : "—"}`,
+    `• Result: ${renderStatusBadge(result.ok, result.status, result.error)}`,
+    `• Latency: ${result.ms ? `${result.ms} ms` : "—"}`,
+    `• Checked: ${when}  `,
+    ``,
+    `Preview: ${slugs.map(s=>`[/${s}](${shortBase}${s}) • [QR](${shortBase}${s}.png)`).join("  ·  ")}`
+  ];
+  return lines.join("\n");
+}
+
+async function upsertStickyComment(issue, slugs, result){
+  const { data: comments } = await octokit.rest.issues.listComments({
+    owner, repo, issue_number: issue.number, per_page: 100,
+  });
+  const mine = comments.find(c => c.user?.type==="Bot" && c.body?.includes(MARK));
+  const body = renderComment(issue, slugs, result);
+  if(!mine){
+    await octokit.rest.issues.createComment({ owner, repo, issue_number: issue.number, body });
+  } else if (mine.body !== body){
+    await octokit.rest.issues.updateComment({ owner, repo, comment_id: mine.id, body });
+  }
+}
+
+async function setLabel(issue, label, present){
+  const labels = (issue.labels||[]).map(l=> typeof l==="string"?l:l.name);
+  const has = labels.includes(label);
+  if(present && !has){
+    await octokit.rest.issues.addLabels({ owner, repo, issue_number: issue.number, labels:[label] });
+  } else if (!present && has){
+    await octokit.rest.issues.removeLabel({ owner, repo, issue_number: issue.number, name: label }).catch(()=>{});
+  }
+}
+
+// fetch all open shortlink issues
+async function getIssues(){
+  const out=[]; let page=1;
+  while(true){
+    const { data } = await octokit.rest.issues.listForRepo({
+      owner, repo, state:"open", labels:"shortlink", per_page:100, page
+    });
+    out.push(...data);
+    if(data.length<100) break; page++;
+  }
+  return out;
+}
+
+// main
+const issues = await getIssues();
+const limit = limiter(CONC);
+let okCount=0, badCount=0;
+
+await Promise.all(issues.map(issue => limit(async ()=>{
+  const { slugs, url } = parseFromIssue(issue);
+  if(!url || !isValidUrl(url) || !slugs.length){
+    // Skip silently but leave a breadcrumb for maintainers
+    await upsertStickyComment(issue, slugs.length?slugs:["(none)"], { ok:false, error:"invalid slug/url" });
+    await setLabel(issue, "broken", true);
+    badCount++;
+    return;
+  }
+
+  const result = await checkUrl(url);
+
+  // update comment + labels
+  await upsertStickyComment(issue, slugs, result);
+  await setLabel(issue, "broken", !result.ok);
+
+  if(result.ok) okCount++; else badCount++;
+})));
+
+console.log(`Health check complete: OK=${okCount} BAD=${badCount}`);
+JS
+)"
