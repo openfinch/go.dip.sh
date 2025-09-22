@@ -168,7 +168,7 @@ for (const issue of links) {
 
       const dir = path.join(outDir, s);               // <- now guaranteed string
       fs.mkdirSync(dir, { recursive: true });
-      fs.writeFileSync(path.join(dir, "index.html"), pageFor(url));
+      fs.writeFileSync(path.join(dir, "index.html"), pageFor(url, s, shortBase));
       rows.push([s, url, issue.html_url]);
       
       const shortUrl = `${shortBase}${s}`;
