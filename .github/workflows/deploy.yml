@@ -21,7 +21,7 @@ jobs:
         with:
           node-version: 20
 
-      - run: npm i octokit
+      - run: npm i octokit qrcode
       - name: Build from issues
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
