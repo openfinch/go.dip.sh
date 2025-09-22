@@ -28,22 +28,55 @@ async function fetchAllShortlinks() {
 }
 
 function parseFromIssue(issue) {
-  // Prefer Issue Forms payload if present
-  // GitHub puts submitted form fields in the issue body as Markdown.
-  // We'll attempt to extract `Slug:` and `Destination URL:` lines.
-  const body = issue.body || "";
-  const slugMatch = body.match(/^\s*Slug:\s*([a-z0-9-]+)\s*$/mi);
-  const urlMatch  = body.match(/^\s*Destination URL:\s*(\S+)\s*$/mi);
+  const body = (issue.body || "").trim();
 
-  let slug = slugMatch?.[1]?.trim();
-  let url  = urlMatch?.[1]?.trim();
+  // 1) Try to parse "### Slug" / "### Destination URL" sections (case-insensitive)
+  //    We grab the text after each heading up to the next heading or end.
+  const section = (name) => {
+    const re = new RegExp(
+      String.raw`(^|\n)#{1,6}\s*${name}\s*\n+([\s\S]*?)(?=\n#{1,6}\s|\n*$)`,
+      "i"
+    );
+    const m = body.match(re);
+    if (!m) return undefined;
+    // Clean block text: strip code fences, trim whitespace
+    let text = m[2].trim();
+    // If users put value in a code block, strip fences
+    text = text.replace(/^```[^\n]*\n([\s\S]*?)\n```$/m, "$1").trim();
+    // Collapse internal whitespace lines
+    return text.split("\n").map(s => s.trim()).filter(Boolean).join(" ");
+  };
 
-  // Fallback to title/body scheme if form parsing fails
-  if (!slug) slug = issue.title.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
-  if (!url)  url = body.trim();
+  let slug = section("slug");
+  let url  = section("destination url");
 
-  return { slug, url };
+  // 2) Fallbacks:
+  //    - Support inline "Slug:" / "Destination URL:" styles
+  if (!slug) {
+    const sm = body.match(/^\s*slug\s*:\s*([a-z0-9- ,]+)\s*$/mi);
+    if (sm) slug = sm[1].trim();
+  }
+  if (!url) {
+    const um = body.match(/^\s*destination url\s*:\s*(\S+)\s*$/mi);
+    if (um) url = um[1].trim();
+  }
+
+  // 3) Final fallback to title/body scheme
+  if (!slug) {
+    slug = issue.title.trim().toLowerCase()
+      .replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
+  }
+  if (!url) url = body;
+
+  // Allow comma/space separated aliases in slug field: "docs, handbook"
+  const slugs = String(slug)
+    .split(/[,\s]+/)
+    .map(s => s.trim())
+    .filter(Boolean);
+
+  return { slugs, url };
 }
+
 
 function isValidSlug(s) { return /^[a-z0-9-]+$/.test(s); }
 function isValidUrl(u) { try { const x = new URL(u); return /^https?:$/.test(x.protocol); } catch { return false; } }
