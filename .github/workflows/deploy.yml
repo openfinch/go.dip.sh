@@ -29,6 +29,7 @@ jobs:
           SHORT_BASE_URL: https://go.dip.sh/
           QR_MODE: short
         run: node scripts/build-from-issues.mjs
+      - run: cp 404.html dist/ 
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
