@@ -1,0 +1,20 @@
+name: Shortlink
+description: Request or edit a short URL
+labels: [shortlink]
+body:
+  - type: input
+    id: slug
+    attributes:
+      label: Slug
+      description: Lowercase letters, numbers, and dashes only (e.g., "docs", "x", "blog-post")
+      placeholder: docs
+    validations:
+      required: true
+  - type: input
+    id: url
+    attributes:
+      label: Destination URL
+      description: Must start with http:// or https://
+      placeholder: https://example.com/getting-started
+    validations:
+      required: true
