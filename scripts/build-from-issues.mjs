@@ -155,6 +155,8 @@ for (const issue of links) {
       continue;
     }
 
+    const meta = fetchMeta(url)
+
     for (const s of slugs) {
       if (!isValidSlug(s)) {
         console.warn(`Skipping slug "${s}" in #${issue.number}: invalid format`);
@@ -168,7 +170,7 @@ for (const issue of links) {
 
       const dir = path.join(outDir, s);               // <- now guaranteed string
       fs.mkdirSync(dir, { recursive: true });
-      fs.writeFileSync(path.join(dir, "index.html"), pageFor(url, s, shortBase));
+      fs.writeFileSync(path.join(dir, "index.html"), pageFor(url, s, shortBase, meta));
       rows.push([s, url, issue.html_url]);
       
       const shortUrl = `${shortBase}${s}`;
