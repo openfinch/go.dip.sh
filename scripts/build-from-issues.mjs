@@ -169,13 +169,28 @@ if (!rows.length) {
   throw new Error("No valid shortlinks were generated. Check issue formats.");
 }
 
-// optional: index page
 fs.writeFileSync(path.join(outDir, "index.html"), `<!doctype html>
 <meta charset="utf-8"><title>Shortlinks</title>
+<style>
+  body{font:16px/1.4 system-ui, sans-serif; max-width: 880px; margin: 2rem auto; padding: 0 1rem;}
+  table{border-collapse: collapse; width: 100%;}
+  th, td{border-bottom: 1px solid #ddd; padding: .5rem .4rem; vertical-align: middle;}
+  img{display:block; width:64px; height:64px; image-rendering: pixelated;}
+  code{background:#f6f8fa; padding:.1rem .3rem; border-radius:4px;}
+</style>
 <h1>Shortlinks</h1>
-<ul>${rows.map(([s,u]) => `<li><a href="/${s}">/${s}</a> → ${u}</li>`).join("\n")}</ul>`);
+<table>
+  <thead><tr><th>Slug</th><th>Destination</th><th>QR</th></tr></thead>
+  <tbody>
+    ${rows.map(([s,u]) => `
+      <tr>
+        <td><a href="/${s}">/${s}</a><br><code>${shortBase}${s}</code></td>
+        <td><a href="${u}">${u}</a></td>
+        <td><a href="${s}.png" download><img src="${s}.png" alt="QR for /${s}"></a></td>
+      </tr>`).join("")}
+  </tbody>
+</table>`);
 
-// optional: machine map
 fs.writeFileSync(path.join(outDir, "map.json"), JSON.stringify(Object.fromEntries(rows.map(([s,u]) => [s,u])), null, 2));
 
 console.log("Built", rows.length, "redirects");
