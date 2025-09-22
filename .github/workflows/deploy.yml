@@ -26,6 +26,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
+          SHORT_BASE_URL: https://go.dip.sh/
+          QR_MODE: short
         run: node scripts/build-from-issues.mjs
 
       - name: Upload artifact
