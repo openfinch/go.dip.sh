@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { Octokit } from "octokit";
+import QRCode from "qrcode";
 
 const token = process.env.GITHUB_TOKEN;
 const repoFull = process.env.GITHUB_REPOSITORY; // owner/name
@@ -12,6 +13,22 @@ fs.mkdirSync(outDir, { recursive: true });
 
 // fetch all open issues with label shortlink
 const octokit = new Octokit({ auth: token });
+
+function ensureTrailingSlash(u) { return u.endsWith("/") ? u : u + "/"; }
+
+function inferBaseUrl(owner, repo) {
+  const isRoot = repo.toLowerCase() === `${owner.toLowerCase()}.github.io`;
+  return isRoot
+    ? `https://${owner}.github.io/`
+    : `https://${owner}.github.io/${repo}/`;
+}
+
+const shortBase =
+  process.env.SHORT_BASE_URL
+    ? ensureTrailingSlash(process.env.SHORT_BASE_URL)
+    : inferBaseUrl(owner, repo);
+
+const qrMode = (process.env.QR_MODE || "short").toLowerCase(); // "short" | "dest"
 
 async function fetchAllShortlinks() {
   const items = [];
@@ -132,6 +149,16 @@ for (const issue of links) {
       fs.mkdirSync(dir, { recursive: true });
       fs.writeFileSync(path.join(dir, "index.html"), pageFor(url));
       rows.push([s, url, issue.html_url]);
+      
+      const shortUrl = `${shortBase}${s}`;
+      const qrTarget = qrMode === "dest" ? url : shortUrl;
+      
+      // Tweak size/margin/ECC as you like
+      await QRCode.toFile(path.join(outDir, `${s}.png`), qrTarget, {
+        width: 512,             // pixels
+        margin: 2,              // quiet zone modules
+        errorCorrectionLevel: "M"
+      });
     }
   } catch (e) {
     console.warn(`Error processing #${issue.number}:`, e);
