@@ -1,0 +1,16 @@
+name = "go-dip-sh"
+main = "src/worker.ts"
+compatibility_date = "2025-09-23"
+workers_dev = true
+tsconfig = "tsconfig.json"
+
+# Add routes or custom bindings as you need, e.g.:
+# routes = [ { pattern = "example.com/*", zone_id = "..." } ]
+
+[[kv_namespaces]]
+binding = "LINKS"
+# For local dev, IDs can be placeholders. Replace with real IDs after running:
+#   wrangler kv:namespace create go-dip-sh-LINKS
+#   wrangler kv:namespace create --preview go-dip-sh-LINKS
+id = "go-dip-sh-LINKS"
+preview_id = "go-dip-sh-LINKS-preview"

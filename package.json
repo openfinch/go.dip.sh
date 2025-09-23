@@ -1,0 +1,27 @@
+{
+  "name": "go.dip.sh",
+  "private": true,
+  "bin": {
+  "shorten": "shorten"
+  },
+  "scripts": {
+    "build": "bun build ./src/cli.ts --outfile shorten --compile",
+    "dev": "wrangler dev --local",
+    "deploy": "wrangler deploy",
+    "types": "tsc -p tsconfig.json --noEmit",
+    "kv:create": "wrangler kv:namespace create go-dip-sh-LINKS && wrangler kv:namespace create --preview go-dip-sh-LINKS"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/qrcode": "^1.5.5",
+    "wrangler": "^4.38.0"
+  },
+  "dependencies": {
+    "@msgpack/msgpack": "^3.0.0",
+    "nanoid": "^5.0.7",
+    "qrcode": "^1.5.3"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  }
+}
