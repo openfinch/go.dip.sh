@@ -2,16 +2,9 @@
 
 URL shortener powered by a Cloudflare Worker with KV storage and a Bun-compiled CLI.
 
-### Prerequisites
-- Bun (to build the CLI)
-- Wrangler (installed via devDependencies)
-- Cloudflare account with API token and account ID
-
 ### Environment variables
 - SHORTEN_BASE: Base URL of the deployed worker. Default: https://go.dip.sh
 - SHORTEN_USER: Name recorded as the creator (fallbacks: $USER, then "cli").
-- CLOUDFLARE_API_TOKEN: Required in CI to deploy and manage KV.
-- CLOUDFLARE_ACCOUNT_ID: Required in CI to deploy and manage KV.
 
 ### CLI
 Build a single-file binary:
