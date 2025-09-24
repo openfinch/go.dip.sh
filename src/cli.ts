@@ -14,8 +14,8 @@ async function main() {
 	const dest = String(args[0]);
 	const slug = args[1] ? String(args[1]) : undefined;
 
-	const base = Bun.env.SHORTEN_BASE || "http://127.0.0.1:8787";
-	const by = Bun.env.SHORT_BY || Bun.env.USER || "cli";
+	const base = Bun.env.SHORTEN_BASE || "https://go.dip.sh";
+	const by = Bun.env.SHORTEN_USER || Bun.env.USER || "cli";
 
 	const body: CreateReq = slug ? { by, dest, slug } : { by, dest };
 
