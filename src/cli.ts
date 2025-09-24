@@ -15,7 +15,7 @@ async function main() {
 	const slug = args[1] ? String(args[1]) : undefined;
 
 	const base = Bun.env.SHORTEN_BASE || "http://127.0.0.1:8787";
-	const by = Bun.env.SHORT_BY || Bun.env.GIT_AUTHOR_NAME || Bun.env.USER || "cli";
+	const by = Bun.env.SHORT_BY || Bun.env.USER || "cli";
 
 	const body: CreateReq = slug ? { by, dest, slug } : { by, dest };
 
