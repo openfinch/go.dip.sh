@@ -99,7 +99,7 @@ export default {
 
         // Root
         if (pathname === "/") {
-            return new Response("Hello from Cloudflare Worker 👋", { headers: { "content-type": "text/plain; charset=utf-8" } });
+            return Response.redirect("https://github.com/openfinch/go.dip.sh", 301);
         }
 
         return Response.redirect(baseUrl, 303);
