@@ -8,6 +8,6 @@ tsconfig = "tsconfig.json"
 enabled = true
 
 [[kv_namespaces]]
-binding = "go_dip_sh_LINKS"
+binding = "LINKS"
 id = "56262969012745d1aad0e51fa75c773a"
 preview_id = "9e6e1c09c4be4f84b75064c3f642bee4"
