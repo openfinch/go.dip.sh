@@ -35,10 +35,9 @@ async function main() {
 	}
 
 	const s = (data as any).slug as string;
-	console.log(s); // stdout: slug only
 	const baseUrl = String(base).replace(/\/$/, "");
-	console.error(`Created: ${baseUrl}/${s}`);
-	console.error(`QR SVG:  ${baseUrl}/${s}.svg`);
+	console.log(`Created: ${baseUrl}/${s}`);
+	console.log(`QR SVG:  ${baseUrl}/${s}.svg`);
 }
 
 main();
