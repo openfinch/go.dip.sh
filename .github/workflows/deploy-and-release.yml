@@ -40,12 +40,12 @@ jobs:
           TITLE="go-dip-sh-LINKS"
 
           echo "Listing existing KV namespaces..."
-          LIST=$(bunx wrangler kv:namespace list --format=json || echo "[]")
+          LIST=$(bunx wrangler kv namespace list --format=json || echo "[]")
 
           PROD_ID=$(echo "$LIST" | jq -r --arg T "$TITLE" '.[] | select(.title==$T) | .id' | head -n1)
           if [ -z "${PROD_ID:-}" ] || [ "$PROD_ID" = "null" ]; then
             echo "Creating KV namespace: $TITLE"
-            CREATE_OUT=$(bunx wrangler kv:namespace create "$TITLE" --format=json)
+            CREATE_OUT=$(bunx wrangler kv namespace create "$TITLE" --format=json)
             PROD_ID=$(echo "$CREATE_OUT" | jq -r '.id')
           fi
 
@@ -53,7 +53,7 @@ jobs:
           PREV_ID=$(echo "$LIST" | jq -r --arg T "$PREV_TITLE" '.[] | select(.title==$T) | .id' | head -n1)
           if [ -z "${PREV_ID:-}" ] || [ "$PREV_ID" = "null" ]; then
             echo "Creating KV preview namespace: $PREV_TITLE"
-            CREATE_OUT=$(bunx wrangler kv:namespace create "$TITLE" --preview --format=json)
+            CREATE_OUT=$(bunx wrangler kv namespace create "$TITLE" --preview --format=json)
             PREV_ID=$(echo "$CREATE_OUT" | jq -r '.id')
           fi
 
