@@ -24,6 +24,47 @@ jobs:
       - name: Install deps
         run: bun install --no-progress
 
+      - name: Bootstrap KV namespaces
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          # Ensure jq is available
+          if ! command -v jq >/dev/null 2>&1; then
+            sudo apt-get update -y
+            sudo apt-get install -y jq
+          fi
+
+          TITLE="go-dip-sh-LINKS"
+
+          echo "Listing existing KV namespaces..."
+          LIST=$(bunx wrangler kv:namespace list --format=json || echo "[]")
+
+          PROD_ID=$(echo "$LIST" | jq -r --arg T "$TITLE" '.[] | select(.title==$T) | .id' | head -n1)
+          if [ -z "${PROD_ID:-}" ] || [ "$PROD_ID" = "null" ]; then
+            echo "Creating KV namespace: $TITLE"
+            CREATE_OUT=$(bunx wrangler kv:namespace create "$TITLE" --format=json)
+            PROD_ID=$(echo "$CREATE_OUT" | jq -r '.id')
+          fi
+
+          PREV_TITLE="$TITLE (preview)"
+          PREV_ID=$(echo "$LIST" | jq -r --arg T "$PREV_TITLE" '.[] | select(.title==$T) | .id' | head -n1)
+          if [ -z "${PREV_ID:-}" ] || [ "$PREV_ID" = "null" ]; then
+            echo "Creating KV preview namespace: $PREV_TITLE"
+            CREATE_OUT=$(bunx wrangler kv:namespace create "$TITLE" --preview --format=json)
+            PREV_ID=$(echo "$CREATE_OUT" | jq -r '.id')
+          fi
+
+          echo "KV PROD_ID=$PROD_ID"
+          echo "KV PREVIEW_ID=$PREV_ID"
+
+          # Patch wrangler.toml with the discovered IDs for the LINKS binding
+          # This assumes a single [[kv_namespaces]] block with id/preview_id lines present.
+          sed -i -E "s/^id = \".*\"/id = \"${PROD_ID}\"/" wrangler.toml
+          sed -i -E "s/^preview_id = \".*\"/preview_id = \"${PREV_ID}\"/" wrangler.toml
+
       - name: Deploy via Wrangler
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -36,7 +77,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ ubuntu-latest, macos-latest, windows-latest ]
+        os: [ ubuntu-latest, ubuntu-24.04-arm, macos-latest, windows-latest, windows-11-arm ]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -50,22 +91,42 @@ jobs:
         run: bun install --no-progress
 
       - name: Build binary
+        id: build_bin
         shell: bash
         run: |
           set -euo pipefail
-          OUT=shorten
-          SUF="linux-x64"
-          if [ "${{ matrix.os }}" = "macos-latest" ]; then SUF="macos-x64"; fi
-          if [ "${{ matrix.os }}" = "windows-latest" ]; then SUF="windows-x64"; OUT="shorten.exe"; fi
+          # Determine OS family
+          OSFAM="linux"
+          case "${{ matrix.os }}" in
+            macos-*) OSFAM="macos" ;;
+            windows-*) OSFAM="windows" ;;
+          esac
+
+          # Determine arch from the runner
+          ARCH=$(uname -m || echo unknown)
+          case "$ARCH" in
+            aarch64|arm64) ARCH_NAME="arm64" ;;
+            x86_64|amd64)  ARCH_NAME="x64" ;;
+            *)             ARCH_NAME="$ARCH" ;;
+          esac
+
+          # File extension and output name
+          EXT=""
+          if [[ "$OSFAM" == "windows" ]]; then EXT=".exe"; fi
+          OUT_FILE="shorten$EXT"
+
+          # Build
           bun run build
-          mv "$OUT" "shorten-${SUF}${OUT#shorten}"
-          echo "ARTIFACT=shorten-${SUF}${OUT#shorten}" >> "$GITHUB_ENV"
+          SUF="${OSFAM}-${ARCH_NAME}"
+          DEST="shorten-${SUF}${EXT}"
+          mv "$OUT_FILE" "$DEST"
+          echo "artifact=$DEST" >> "$GITHUB_OUTPUT"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.ARTIFACT }}
-          path: ${{ env.ARTIFACT }}
+          name: ${{ steps.build_bin.outputs.artifact }}
+          path: ${{ steps.build_bin.outputs.artifact }}
 
   release-cli:
     name: Create GitHub Release
