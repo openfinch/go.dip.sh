@@ -8,9 +8,6 @@ tsconfig = "tsconfig.json"
 # routes = [ { pattern = "example.com/*", zone_id = "..." } ]
 
 [[kv_namespaces]]
-binding = "LINKS"
-# For local dev, IDs can be placeholders. Replace with real IDs after running:
-#   wrangler kv:namespace create go-dip-sh-LINKS
-#   wrangler kv:namespace create --preview go-dip-sh-LINKS
-id = "go-dip-sh-LINKS"
-preview_id = "go-dip-sh-LINKS-preview"
+binding = "go_dip_sh_LINKS"
+id = "56262969012745d1aad0e51fa75c773a"
+preview_id = "9e6e1c09c4be4f84b75064c3f642bee4"

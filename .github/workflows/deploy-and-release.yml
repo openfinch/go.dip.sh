@@ -24,47 +24,6 @@ jobs:
       - name: Install deps
         run: bun install --no-progress
 
-      - name: Bootstrap KV namespaces
-        shell: bash
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: |
-          set -euo pipefail
-          # Ensure jq is available
-          if ! command -v jq >/dev/null 2>&1; then
-            sudo apt-get update -y
-            sudo apt-get install -y jq
-          fi
-
-          TITLE="go-dip-sh-LINKS"
-
-          echo "Listing existing KV namespaces..."
-          LIST=$(bunx wrangler kv namespace list --format=json || echo "[]")
-
-          PROD_ID=$(echo "$LIST" | jq -r --arg T "$TITLE" '.[] | select(.title==$T) | .id' | head -n1)
-          if [ -z "${PROD_ID:-}" ] || [ "$PROD_ID" = "null" ]; then
-            echo "Creating KV namespace: $TITLE"
-            CREATE_OUT=$(bunx wrangler kv namespace create "$TITLE" --format=json)
-            PROD_ID=$(echo "$CREATE_OUT" | jq -r '.id')
-          fi
-
-          PREV_TITLE="$TITLE (preview)"
-          PREV_ID=$(echo "$LIST" | jq -r --arg T "$PREV_TITLE" '.[] | select(.title==$T) | .id' | head -n1)
-          if [ -z "${PREV_ID:-}" ] || [ "$PREV_ID" = "null" ]; then
-            echo "Creating KV preview namespace: $PREV_TITLE"
-            CREATE_OUT=$(bunx wrangler kv namespace create "$TITLE" --preview --format=json)
-            PREV_ID=$(echo "$CREATE_OUT" | jq -r '.id')
-          fi
-
-          echo "KV PROD_ID=$PROD_ID"
-          echo "KV PREVIEW_ID=$PREV_ID"
-
-          # Patch wrangler.toml with the discovered IDs for the LINKS binding
-          # This assumes a single [[kv_namespaces]] block with id/preview_id lines present.
-          sed -i -E "s/^id = \".*\"/id = \"${PROD_ID}\"/" wrangler.toml
-          sed -i -E "s/^preview_id = \".*\"/preview_id = \"${PREV_ID}\"/" wrangler.toml
-
       - name: Deploy via Wrangler
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
